@@ -59,6 +59,7 @@ class AppleGame(QWidget):
         self.time_left = self.GAME_TIME
         self.selected_cells = []
         self.is_dragging = False
+        self.drag_start_cell = None
         self.grid_data = [[random.randint(1, 9) for _ in range(self.GRID_SIZE)] for _ in range(self.GRID_SIZE)]
 
         self.score_label.setText(f"점수: {self.score}")
@@ -104,24 +105,43 @@ class AppleGame(QWidget):
             r, c = self.get_cell_at(event.pos())
             if r is not None:
                 self.is_dragging = True
+                self.drag_start_cell = (r, c)
                 self.reset_selection_visuals()
                 self.selected_cells.clear()
-                self.selected_cells.append((r, c))
-                self.update_selection_visuals()
-                self.update_status()
+                self.update_rectangle_selection((r,c))
+
 
     def mouseMoveEvent(self, event):
         if self.is_dragging:
             r, c = self.get_cell_at(event.pos())
-            if r is not None and (r, c) not in self.selected_cells:
-                self.selected_cells.append((r, c))
-                self.update_selection_visuals()
-                self.update_status()
+            if r is not None:
+                self.update_rectangle_selection((r,c))
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton and self.is_dragging:
             self.is_dragging = False
             self.check_selection()
+            self.drag_start_cell = None
+
+    def update_rectangle_selection(self, end_cell):
+        self.reset_selection_visuals()
+        self.selected_cells.clear()
+
+        if not self.drag_start_cell:
+            return
+
+        start_r, start_c = self.drag_start_cell
+        end_r, end_c = end_cell
+        
+        r_min, r_max = min(start_r, end_r), max(start_r, end_r)
+        c_min, c_max = min(start_c, end_c), max(start_c, end_c)
+
+        for r in range(r_min, r_max + 1):
+            for c in range(c_min, c_max + 1):
+                self.selected_cells.append((r, c))
+        
+        self.update_selection_visuals()
+
 
     def update_selection_visuals(self):
         """선택된 셀들의 배경색을 변경합니다."""
@@ -135,69 +155,32 @@ class AppleGame(QWidget):
                 self.grid_labels[r][c].setStyleSheet("background-color: #f0f0f0; color: #333; border: 1px solid #ccc;")
 
     def update_status(self):
-        """현재 선택된 숫자들과 합계를 상태 라벨에 표시합니다."""
-        if not self.selected_cells:
-            self.status_label.setText("숫자를 드래그하여 선택하세요.")
-            return
-
-        current_sum = sum(self.grid_data[r][c] for r, c in self.selected_cells)
-        selected_numbers = [str(self.grid_data[r][c]) for r, c in self.selected_cells]
-        self.status_label.setText(f"선택: {' + '.join(selected_numbers)} = {current_sum}")
+        """상태 라벨을 기본 텍스트로 유지합니다."""
+        self.status_label.setText("숫자를 드래그하여 선택하세요.")
 
     def check_selection(self):
-        """선택된 숫자들의 합과 연결 상태를 확인하고 처리합니다."""
+        """선택된 사각 영역의 숫자 합을 확인하고 처리합니다."""
         if not self.selected_cells:
             return
 
         current_sum = sum(self.grid_data[r][c] for r, c in self.selected_cells)
 
-        if current_sum == 10 and len(self.selected_cells) >= 2 and self.is_selection_connected():
-            self.score += len(self.selected_cells)
-            self.score_label.setText(f"점수: {self.score}")
+        if current_sum == 10 and len(self.selected_cells) >= 2:
+            cleared_count = 0
             for r, c in self.selected_cells:
+                if self.grid_data[r][c] != 0:
+                    cleared_count += 1
                 self.grid_data[r][c] = 0
                 self.grid_labels[r][c].setVisible(False)
+            
+            if cleared_count > 0:
+                self.score += cleared_count
+                self.score_label.setText(f"점수: {self.score}")
         else:
             self.reset_selection_visuals()
 
         self.selected_cells.clear()
         self.update_status()
-
-    def is_selection_connected(self):
-        """선택된 셀들이 규칙에 맞게 연결되었는지 확인합니다."""
-        if len(self.selected_cells) < 2:
-            return False
-
-        rows = {r for r, c in self.selected_cells}
-        cols = {c for r, c in self.selected_cells}
-
-        is_same_row = len(rows) == 1
-        is_same_col = len(cols) == 1
-
-        if not (is_same_row or is_same_col):
-            return False
-
-        if is_same_row:
-            r = rows.pop()
-            min_c, max_c = min(cols), max(cols)
-            for c in range(min_c, max_c + 1):
-                if self.grid_data[r][c] == 0 and (r, c) not in self.selected_cells:
-                    continue # 빈 칸은 건너뛰기
-                if (r, c) not in self.selected_cells:
-                    return False # 경로상에 선택되지 않은 다른 숫자가 있음
-            return True
-
-        if is_same_col:
-            c = cols.pop()
-            min_r, max_r = min(rows), max(rows)
-            for r in range(min_r, max_r + 1):
-                if self.grid_data[r][c] == 0 and (r, c) not in self.selected_cells:
-                    continue # 빈 칸은 건너뛰기
-                if (r, c) not in self.selected_cells:
-                    return False # 경로상에 선택되지 않은 다른 숫자가 있음
-            return True
-
-        return False
 
     def update_timer(self):
         """타이머를 1초씩 업데이트하고, 0이 되면 게임을 종료합니다."""
